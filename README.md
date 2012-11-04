@@ -1,4 +1,0 @@
-npuzzle
-=======
-
-temporary
