@@ -1,0 +1,202 @@
+<html>
+   <head>
+     <title>N-Puzzle</title>
+     <style type="text/css">
+        #game-board {position: relative; background-color: black; height: 144px; width: 144px; margin:0px auto; text-align:center;}
+        .game-piece {position: absolute; height: 48px; width: 48px;}
+        span.ready {background-color: yellow;padding-left: 20px; padding-right: 20px;}
+        span.solved {background-color: green;padding-left: 20px; padding-right: 20px;}
+        span.working {background-color: red; padding-left: 20px; padding-right: 20px;}
+        div.editor { background-color: white; text-align:left; height: 100%; width: 50%;}
+     </style>
+     <script src="http://d1n0x3qji82z53.cloudfront.net/src-min-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+     <script type="text/javascript" src="js/jquery-1.7.2.min.js"></script>
+     <script type="text/javascript" src="js/common-search.js"></script>
+     <script type="text/javascript" src="js/astar.js"></script>
+     <script type="text/javascript" src="js/rbfs.js"></script>
+     <script type="text/javascript">
+
+        var SIZE = 3;
+        var stackCount = 0;
+        var startState = [7,2,4,5,0,6,8,3,1];
+        var goalState;
+        var goalPositions = new Array(SIZE);
+        //var CHEAT = '0-1-2-3-4-5-6-7-8';
+        var CHEAT = '1-2-3-4-5-6-7-8-0';
+        var gameBoard;
+        var statusBar;
+        var pieces = new Array(SIZE);
+        var SLOT_SIZE=48;
+        var board = new Array(SIZE);
+        var sliding = false;
+
+        $(document).ready(function(){
+             $('#hidden-algo-1').load('js/astar.js');
+             $('#hidden-algo-2').load('js/rbfs.js');
+             gameBoard = $('#game-board'); 
+             establishGoal();
+             setupBoard(startState);
+        });
+
+       // Could make this a node, CHEAT is string.
+       // allow user to choose end-state
+        function establishGoal() {
+           /*
+              goalState = [
+              [0,1,2],
+              [3,4,5],
+              [6,7,8]];
+              */
+            goalState = [
+              [1,2,3],
+              [4,5,6],
+              [7,8,0]];
+           for(var i=0; i<SIZE; i++) {
+              for(var j=0; j<SIZE; j++)
+                 goalPositions[goalState[i][j]] = [i,j];
+           }
+        }
+
+        function getNodeFromBoard() {
+           var state = new Array(SIZE);
+           for(var i=0; i<SIZE; i++) {
+              state[i] = [];
+              for(var j=0; j<SIZE; j++) {
+                 state[i][j] = parseInt(board[i][j].attr('id').split('-')[1]);
+                 if(state[i][j] === 0) state['blank'] = [i,j];
+              }
+           }
+           return node(MOVE.NONE, state);
+        }
+
+        /* 
+         * algorithm will be swapped here, use parens pattern in js solver.js 
+         * also consider something like bootstrap or require or what have you
+         */
+        function solvePuzzle(algo) {
+          var rootNode = getNodeFromBoard();
+          var algorithm;
+          var statusBar;
+          var codeDiv;
+          switch(algo) {
+             case 'RBFS':
+                algorithm = solveRBFS;
+                statusBar = $('#RBFS-status');
+                codeDiv = $('#hidden-algo-2');
+                break;
+             case 'A*':
+                algorithm = solveAStar;
+                statusBar = $('#A-status');
+                codeDiv = $('#hidden-algo-1');
+                break;
+          }
+
+          editor.setValue(codeDiv.text());
+          editor.clearSelection();
+
+          statusBar.removeClass('ready');
+          statusBar.addClass('working');
+
+          resetValues(); // make value resets self contained
+          setTimeout(function() {
+            algorithm(rootNode);
+            statusBar.removeClass('working');
+            statusBar.addClass('solved');
+            illustrate();
+                }, 1000);
+        }
+
+        // Solution globally set for now
+        function illustrate() {
+           for(var x=0; x<solution.length-1; x++) {
+              var theFun = function(bb){
+                 var base = bb;
+                 var next = bb+1;
+                 return function() {
+                    var blank = solution[next].state['blank'];
+                    var id = solution[base].state[blank[0]][blank[1]];
+                    pieces[id].click();
+                 }
+              }
+              var funny = theFun(x);
+              setTimeout(funny, x*310);
+           }
+        }
+
+        function setupBoard(config) {
+           var n=0;
+           for(var i=0; i<SIZE; i++)  {
+              board[i] = [];
+              for(var j=0; j<SIZE; j++) {
+                 var img = config[n] == 0 ? '_.gif' : ''+config[n]+'.jpg';
+                 var el = $('<img src="img/'+img+'"/>');
+                 el.offset({top: i*SLOT_SIZE, left: j*SLOT_SIZE});
+                 el.attr('id', 'piece-'+config[n]);
+                 el.addClass('game-piece');
+                 el.click(function() {
+                     if(sliding) return;
+                     var me = $(this);
+                     var myLoc = getBoardPos(me);
+                     var blankLoc = getBoardPos(pieces[0]);
+                     if(!isLegal(myLoc, blankLoc)) return;
+                     var myPos = me.position();
+                     var blankPos = pieces[0].position();
+                     pieces[0].css('top', myPos.top);
+                     pieces[0].css('left', myPos.left);
+                     sliding = true;
+                     board[blankLoc[0]][blankLoc[1]] = me;
+                     board[myLoc[0]][myLoc[1]] = pieces[0];
+                     me.animate({top: blankPos.top, left:blankPos.left}, 300, function() {sliding=false;});
+                    });
+                 pieces[config[n]] = el;
+                 board[i][j] = el;
+                 el.appendTo(gameBoard);
+                 n++;
+              }
+           }
+        }
+
+        function getBoardPos(piece) {
+           for(var i=0; i<SIZE; i++) 
+              for(var j=0; j<SIZE; j++)
+                 if(board[i][j] == piece ||
+                       board[i][j][0].id == piece[0].id) return [i, j];
+        }
+
+        function isLegal(thisLoc, _blank) {
+           var blankLoc = _blank || getBoardPos(pieces[0]);
+           return (Math.abs(blankLoc[0]-thisLoc[0]) == 1 && blankLoc[1]==thisLoc[1]) ||
+              (blankLoc[0] == thisLoc[0] && Math.abs(blankLoc[1]-thisLoc[1]) == 1);
+        }
+
+     </script>
+   </head>
+   <body style="background-color: #A9D0F5;">
+      <div style="position:absolute;width:100%; text-align:center;" >
+         <div style="width:100%; height:60px; color: black;"><h2>N Puzzle Algorithms</h2></div>
+         <div id="game-board"></div>
+         <br />
+         <input type="button" value="A*" onclick="solvePuzzle('A*');" />
+         <span id="A-status" class="ready">status</span><br />
+         <input type="button" value="RBFS" onclick="solvePuzzle('RBFS');" />
+         <span id="RBFS-status" class="ready">status</span><br /><br />
+         <div id="editor" class="editor">//TODO PASTE IN SEARCH ALGORITHM</div>
+
+         <script>
+            var editor = ace.edit("editor");
+            editor.setTheme("ace/theme/eclipse");
+            editor.getSession().setMode("ace/mode/javascript");
+            editor.setReadOnly(true);
+
+            /*
+            var session = editor.getSession();
+            var range = new Range(5, 0, 5, 10);
+            var selection = new Range(session);
+            selection.add(range);
+            */
+         </script> 
+         <div id='hidden-algo-1' style='background-color:white; display:none'></div>
+         <div id='hidden-algo-2' style='background-color:white; display:none'></div>
+      </div>
+   </body>
+</html>
